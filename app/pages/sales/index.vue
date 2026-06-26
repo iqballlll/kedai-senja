@@ -1,21 +1,27 @@
 <template>
   <div class="dash-root" :class="theme">
-    <aside class="sidebar">
+    <!-- Tombol Burger Menu untuk Mobile -->
+    <button class="mobile-nav-toggle" @click="isMobileMenuOpen = !isMobileMenuOpen">
+      {{ isMobileMenuOpen ? '✕' : '☰' }}
+    </button>
+
+    <!-- Sidebar Layout -->
+    <aside class="sidebar" :class="{ 'mobile-open': isMobileMenuOpen }">
       <div class="sidebar-brand">
         <span class="brand-icon">🌅</span>
         <span class="brand-name">Kedai Senja</span>
       </div>
       <nav class="sidebar-nav">
-        <NuxtLink to="/dashboard" class="nav-item" active-class="active">
+        <NuxtLink to="/dashboard" class="nav-item" active-class="active" @click="isMobileMenuOpen = false">
           <span class="nav-icon">📊</span> Dashboard
         </NuxtLink>
-        <NuxtLink to="/menu" class="nav-item" active-class="active">
+        <NuxtLink to="/menu" class="nav-item" active-class="active" @click="isMobileMenuOpen = false">
           <span class="nav-icon">🍜</span> Menu
         </NuxtLink>
-        <NuxtLink to="/sales" class="nav-item" active-class="active">
+        <NuxtLink to="/sales" class="nav-item" active-class="active" @click="isMobileMenuOpen = false">
           <span class="nav-icon">💰</span> Sales
         </NuxtLink>
-        <NuxtLink to="/analysis" class="nav-item" active-class="active">
+        <NuxtLink to="/analysis" class="nav-item" active-class="active" @click="isMobileMenuOpen = false">
           <span class="nav-icon">🤖</span> Analysis
         </NuxtLink>
       </nav>
@@ -27,6 +33,9 @@
       </div>
     </aside>
 
+    <!-- Overlay penutup sidebar ketika mobile menu aktif -->
+    <div v-if="isMobileMenuOpen" class="sidebar-overlay" @click="isMobileMenuOpen = false"></div>
+
     <main class="main">
       <div class="top-bar">
         <div>
@@ -36,7 +45,7 @@
         <button class="btn-add" @click="openFormModal()">+ Add Sales</button>
       </div>
 
-      <!-- Summary -->
+      <!-- Summary Cards Grid -->
       <div class="stats-grid">
         <div class="stat-card">
           <p class="stat-label">Total Revenue</p>
@@ -68,9 +77,10 @@
         <button v-if="filterDate" class="btn-clear" @click="filterDate = ''">Clear</button>
       </div>
 
-      <!-- Table -->
+      <!-- Responsive Table / Card List Wrapper -->
       <div class="table-wrap">
-        <table class="table">
+        <!-- Tampilan Desktop (Table) -->
+        <table class="table desktop-only">
           <thead>
             <tr>
               <th>Menu</th>
@@ -106,6 +116,46 @@
             </tr>
           </tbody>
         </table>
+
+        <!-- Tampilan Mobile (Card List) -->
+        <div class="mobile-only mobile-card-list">
+          <div v-if="filteredSales.length === 0" class="empty">No sales data yet</div>
+          <div v-for="s in filteredSales" :key="s.id" class="mobile-sale-card">
+            <div class="card-header-row">
+              <div>
+                <p class="card-menu-name">{{ s.menus?.name }}</p>
+                <span class="badge">{{ s.menus?.category }}</span>
+              </div>
+              <p class="card-date">{{ s.date }}</p>
+            </div>
+            
+            <div class="card-body-grid">
+              <div class="body-item">
+                <span>Qty:</span>
+                <strong>{{ s.qty_sold }} pcs</strong>
+              </div>
+              <div class="body-item">
+                <span>Revenue:</span>
+                <span class="td-green">{{ formatRp(s.qty_sold * s.menus?.price) }}</span>
+              </div>
+              <div class="body-item">
+                <span>Modal:</span>
+                <span class="td-red">{{ formatRp(s.modal) }}</span>
+              </div>
+              <div class="body-item">
+                <span>Profit:</span>
+                <span :class="(s.qty_sold * s.menus?.price - s.modal) >= 0 ? 'td-green' : 'td-red'">
+                  {{ formatRp(s.qty_sold * s.menus?.price - s.modal) }}
+                </span>
+              </div>
+            </div>
+
+            <div class="card-actions">
+              <button class="btn-edit" @click="openFormModal(s)">Edit</button>
+              <button class="btn-delete" @click="requestDeleteSale(s)">Delete</button>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
 
@@ -182,7 +232,6 @@
         <p class="confirm-desc">
           Penjualan <strong>{{ saleToDelete?.menus?.name }}</strong>
           ({{ saleToDelete?.qty_sold }}pcs, {{ saleToDelete?.date }}) akan dihapus permanen.
-          Tindakan ini tidak bisa dibatalkan.
         </p>
         <div class="confirm-actions">
           <button class="btn-cancel" @click="cancelDelete">Batal</button>
@@ -195,11 +244,13 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 const supabase = useSupabaseClient()
 const router = useRouter()
 
 const theme = ref('dark')
+const isMobileMenuOpen = ref(false) // State kontrol menu mobile
+
 function toggleTheme() {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
 }
@@ -215,7 +266,7 @@ const { data: sales, refresh } = await useAsyncData('sales', async () => {
   return data || []
 })
 
-// ============ FETCH MENUS (untuk dropdown) ============
+// ============ FETCH MENUS ============
 const { data: menus } = await useAsyncData('menus-for-sales', async () => {
   const { data } = await supabase
     .from('menus')
@@ -282,7 +333,6 @@ const selectedMenuIsUnavailable = computed(() => {
 function onMenuPicked() {
   recalculateModal()
 }
-// Modal otomatis terisi dari HPP menu × qty, tapi tetap bisa diedit manual setelahnya
 function recalculateModal() {
   if (!selectedMenu.value || !form.value.qty_sold) return
   const hpp = selectedMenu.value.calculated_hpp || 0
@@ -373,8 +423,11 @@ async function logout() {
   --badge-bg: #fff0e6; --input-bg: #f5f5f0; --input-border: #e0e0db;
   --accent: #e07b39; --accent2: #c45e1e; --modal-overlay: rgba(0,0,0,0.4);
 }
+
 .dash-root { display: flex; min-height: 100vh; background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; }
-.sidebar { width: 240px; background: var(--sidebar-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 28px 16px; position: fixed; top: 0; left: 0; bottom: 0; }
+
+/* SIDEBAR LAYOUT */
+.sidebar { width: 240px; background: var(--sidebar-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 28px 16px; position: fixed; top: 0; left: 0; bottom: 0; z-index: 100; transition: transform 0.3s ease; }
 .sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; margin-bottom: 36px; }
 .brand-icon { font-size: 24px; }
 .brand-name { font-size: 18px; font-weight: 800; color: var(--text); letter-spacing: -0.3px; }
@@ -388,12 +441,16 @@ async function logout() {
 .btn-theme:hover { color: var(--text); }
 .btn-logout { background: none; border: 1px solid var(--border); color: var(--text-dim); border-radius: 8px; padding: 10px; font-size: 13px; cursor: pointer; }
 .btn-logout:hover { border-color: #ff6b6b; color: #ff6b6b; }
-.main { margin-left: 240px; flex: 1; padding: 40px; }
-.top-bar { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 32px; }
+
+/* MAIN CONTENT */
+.main { margin-left: 240px; flex: 1; padding: 40px; min-width: 0; }
+.top-bar { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 32px; gap: 16px; }
 .top-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
 .top-title { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }
-.btn-add { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; font-size: 13px; font-weight: 600; border: none; border-radius: 8px; padding: 10px 18px; cursor: pointer; text-decoration: none; transition: opacity 0.15s; margin-top: 6px; }
+.btn-add { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; font-size: 13px; font-weight: 600; border: none; border-radius: 8px; padding: 10px 18px; cursor: pointer; text-decoration: none; transition: opacity 0.15s; margin-top: 6px; white-space: nowrap; }
 .btn-add:hover { opacity: 0.85; }
+
+/* STATS GRID */
 .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
 .stat-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; }
 .stat-card.highlight { border-color: var(--highlight-border); background: var(--highlight-bg); }
@@ -402,11 +459,15 @@ async function logout() {
 .stat-value.positive { color: #16a34a; }
 .stat-value.negative { color: #dc2626; }
 .stat-sub { margin-top: 6px; font-size: 12px; color: var(--text-dim); }
+
+/* FILTER BAR */
 .filter-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
 .date-input { background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 8px; padding: 8px 12px; font-size: 13px; color: var(--text); outline: none; }
 .date-input:focus { border-color: var(--accent); }
 .btn-clear { background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
 .btn-clear:hover { color: var(--text); }
+
+/* TABLE & CARDS GRAPHICS */
 .table-wrap { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
 .table { width: 100%; border-collapse: collapse; }
 .table th { padding: 12px 16px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); border-bottom: 1px solid var(--border); text-align: left; }
@@ -417,7 +478,7 @@ async function logout() {
 .td-green { color: #16a34a; font-weight: 600; }
 .td-red { color: #dc2626; }
 .td-muted { color: var(--text-dim); font-size: 13px; }
-.badge { background: var(--badge-bg); color: var(--accent); font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px; border: 1px solid var(--highlight-border); }
+.badge { display: inline-block; background: var(--badge-bg); color: var(--accent); font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px; border: 1px solid var(--highlight-border); }
 .action-cell { display: flex; gap: 6px; }
 .btn-edit { font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 6px; cursor: pointer; background: var(--badge-bg); border: 1px solid var(--highlight-border); color: var(--accent); }
 .btn-edit:hover { opacity: 0.85; }
@@ -425,9 +486,14 @@ async function logout() {
 .btn-delete:hover { background: rgba(220,38,38,0.15); }
 .empty { text-align: center; color: var(--text-dim); padding: 40px !important; font-size: 14px; }
 
-/* MODAL LAYOUT */
+/* UTILS VISIBILITY CONTROLLERS */
+.mobile-nav-toggle { display: none; }
+.sidebar-overlay { display: none; }
+.mobile-only { display: none; }
+
+/* MODALS LAYOUT */
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--modal-overlay); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px; }
-.modal-content { background: var(--sidebar-bg); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 440px; padding: 20px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); animation: modalSlideUp 0.15s ease-out; }
+.modal-content { background: var(--sidebar-bg); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 440px; padding: 20px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); animation: modalSlideUp 0.15s ease-out; max-height: 90vh; overflow-y: auto; }
 @keyframes modalSlideUp { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 .modal-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
 .modal-title { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; }
@@ -450,7 +516,6 @@ async function logout() {
 .btn-submit { background: var(--accent); border: none; color: #fff; font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 8px; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* MODAL KONFIRMASI DELETE */
 .modal-confirm { max-width: 380px; text-align: center; padding: 28px 24px; }
 .confirm-icon { font-size: 36px; margin-bottom: 12px; }
 .confirm-title { font-size: 17px; font-weight: 800; margin-bottom: 10px; }
@@ -459,4 +524,61 @@ async function logout() {
 .btn-confirm-delete { background: #dc2626; border: none; color: #fff; font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 8px; cursor: pointer; }
 .btn-confirm-delete:hover { background: #b91c1c; }
 .btn-confirm-delete:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* =============================================
+   MEDIA QUERIES (BREAKPOINT MOBILE & TABLET)
+   ============================================= */
+
+@media (max-width: 1024px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+  /* Toggle Hamburger Button */
+  .mobile-nav-toggle {
+    display: block; position: fixed; top: 16px; left: 16px; z-index: 110;
+    background: var(--sidebar-bg); border: 1px solid var(--border); color: var(--text);
+    width: 40px; height: 40px; border-radius: 8px; font-size: 18px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Sidebar Slider Effect */
+  .sidebar { transform: translateX(-100%); box-shadow: 10px 0 30px rgba(0,0,0,0.2); }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .sidebar-overlay { display: block; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 90; }
+
+  /* Adjust Main Space */
+  .main { margin-left: 0; padding: 80px 16px 40px 16px; }
+  .top-bar { align-items: center; margin-bottom: 24px; }
+  .top-title { font-size: 24px; }
+
+  /* Stats Grid to Single Column */
+  .stats-grid { grid-template-columns: 1fr; gap: 12px; }
+  .stat-card { padding: 16px; }
+  .stat-value { font-size: 20px; }
+
+  /* Hide Desktop Table, Show Mobile Cards */
+  .desktop-only { display: none; }
+  .mobile-only { display: block; }
+  .table-wrap { border: none; background: none; }
+
+  /* Card List Mobile Styling */
+  .mobile-card-list { display: flex; flex-direction: column; gap: 12px; }
+  .mobile-sale-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  
+  .card-header-row { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border2); padding-bottom: 10px; margin-bottom: 12px; }
+  .card-menu-name { font-weight: 700; font-size: 15px; color: var(--text); margin-bottom: 4px; }
+  .card-date { font-size: 12px; color: var(--text-dim); }
+
+  .card-body-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin-bottom: 14px; }
+  .body-item { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+  .body-item span { color: var(--text-muted); font-size: 11px; text-transform: uppercase; }
+  .body-item strong, .body-item span { font-weight: 600; }
+
+  .card-actions { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border2); padding-top: 12px; }
+  .card-actions .btn-edit, .card-actions .btn-delete { padding: 6px 14px; font-size: 12px; }
+
+  /* Modal Form Row Adjustments */
+  .form-row { grid-template-columns: 1fr; gap: 16px; }
+}
 </style>

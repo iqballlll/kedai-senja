@@ -12,7 +12,7 @@ export default defineNuxtConfig({
   },
   css: ['~/assets/css/main.css'],
   routeRules: {
-    '/': { prerender: true }
+   '/': { redirect: '/login' }
   },
   compatibilityDate: '2025-01-15',
   eslint: {
