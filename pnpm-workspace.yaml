@@ -1,0 +1,8 @@
+allowBuilds:
+  '@google/genai': false
+  '@parcel/watcher': false
+  '@tailwindcss/oxide': false
+  esbuild: false
+  protobufjs: false
+  unrs-resolver: false
+  vue-demi: false
